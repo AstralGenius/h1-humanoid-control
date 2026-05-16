@@ -20,7 +20,7 @@ See [`docs/interface.md`](docs/interface.md) for the topic contract and
 
 - [x] Stage 0 — Baseline H1 policy verified in Isaac Sim
 - [x] Stage 1 — Interface contract defined
-- [ ] Stage 2 — Isaac Sim ↔ ROS 2 bridge
+- [x] Stage 2 — Isaac Sim ↔ ROS 2 bridge
 - [ ] Stage 3 — Teleop controller
 - [ ] Stage 4 — Closed-loop waypoint controller
 - [ ] Stage 5 — Validation and documentation
