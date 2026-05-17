@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'teleop_node = h1_controller.teleop_node:main',
         ],
     },
 )
