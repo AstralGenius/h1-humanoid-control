@@ -1,55 +1,74 @@
 # H1 Humanoid Control — Interface Contract
 
+**Version:** 1.1 (Stage 2 complete)
+
+Status tags throughout:
+- 🟢 **implemented** — live in the running system
+- 🟡 **partial** — implemented with known gaps (noted)
+- ⚪ **planned** — defined for a later stage, not yet wired
+
+---
+
 ## System Architecture
 
 Two independent processes communicating only via ROS 2 topics:
 
-- **Isaac Sim process** — runs physics, H1 flat-terrain policy inference, rendering
-- **ROS 2 process** — runs controller nodes (teleop, waypoint follower)
+- **Isaac Sim process** (Python 3.11) — runs physics, H1 walking policy, and
+  an OmniGraph that handles all ROS 2 pub/sub
+- **ROS 2 controller process** (Python 3.12) — runs teleop, waypoint follower,
+  and logging nodes using system `rclpy`
 
-No shared memory. No file-based IPC. All communication is ROS 2 over localhost.
+No shared memory. No file-based IPC. All communication is ROS 2 over DDS on
+localhost.
 
 ---
 
-## Physics Parameters
+## Physics Parameters 🟢
 
 | Parameter | Value | Source |
 |---|---|---|
-| Physics step (dt) | 0.005 s (200 Hz) | h1_standalone.py line 55: `physics_dt=1/200` |
-| Rendering step | 0.04 s (25 Hz) | h1_standalone.py line 55: `rendering_dt=8/200` |
-| Policy inference rate | 200 Hz | runs every physics step via `on_physics_step` |
+| Physics step (dt) | 0.005 s (200 Hz) | `bridge_config.PHYSICS_DT` |
+| Rendering step | 0.04 s (25 Hz) | `bridge_config.RENDERING_DT` |
+| Policy inference rate | 200 Hz | runs every physics step in `on_physics_step` |
 
 ---
 
 ## Topics
 
-### /h1/cmd_vel
+### /h1/cmd_vel  🟢
 
 - **Direction:** ROS 2 controller → Isaac Sim bridge
 - **Type:** `geometry_msgs/Twist`
-- **Publisher rate:** 50 Hz (controller decides)
 - **QoS:** default reliable, depth 10
+- **Source inside Isaac Sim:** OmniGraph `ROS2SubscribeTwist` node
 - **Fields used:**
-  - `linear.x` — forward velocity (m/s) → maps to `base_command[0]`
-  - `angular.z` — yaw rate (rad/s) → maps to `base_command[2]`
+  - `linear.x` — forward velocity (m/s), clamped to `[0.0, MAX_LIN_X]`
+  - `angular.z` — yaw rate (rad/s), clamped to `[-MAX_ANG_Z, MAX_ANG_Z]`
 - **Fields ignored:**
   - `linear.y` — H1 flat-terrain policy does not support lateral motion
   - `linear.z`, `angular.x`, `angular.y` — not physically meaningful here
 
-### /h1/odom
+### /h1/odom  🟢
 
 - **Direction:** Isaac Sim bridge → ROS 2 controller
 - **Type:** `nav_msgs/Odometry`
-- **Publisher rate:** 200 Hz (published from `on_physics_step`)
+- **Publisher rate:** ~30 Hz (tied to OmniGraph render tick; matches `OnPlaybackTick`)
 - **QoS:** default reliable, depth 10
-- **Fields published:**
-  - `pose.pose.position` — from `h1.robot.get_world_pose()[0]`
-  - `pose.pose.orientation` — from `h1.robot.get_world_pose()[1]`, **converted from Isaac `[w,x,y,z]` to ROS `[x,y,z,w]`**
-  - `twist.twist.linear` — from `h1.robot.get_linear_velocity()`
-  - `twist.twist.angular` — from `h1.robot.get_angular_velocity()`
+- **Source inside Isaac Sim:** OmniGraph `IsaacComputeOdometry` → `ROS2PublishOdometry`
+- **Fields published:** position, orientation, linear velocity, angular velocity
+  of the robot's chassis prim (`/World/H1`).
 - **Frame IDs:**
   - `header.frame_id` = `"odom"`
   - `child_frame_id` = `"base_link"`
+
+Quaternion ordering is handled internally by the OmniGraph publish node —
+no manual `[w,x,y,z]` → `[x,y,z,w]` conversion needed at the application layer.
+
+### /clock  🟢
+
+- **Type:** `rosgraph_msgs/Clock`
+- **Purpose:** simulated time, useful for downstream nodes that need
+  synchronised stamps
 
 ---
 
@@ -57,9 +76,7 @@ No shared memory. No file-based IPC. All communication is ROS 2 over localhost.
 
 - `world` — Isaac Sim global frame, Z up, X forward
 - `odom` — identical to world in this project (no drift model)
-- `base_link` — robot torso centre, Z up, X forward
-
-Quaternion convention: Isaac Sim returns `[w, x, y, z]`. ROS expects `[x, y, z, w]`. The bridge must reorder before publishing.
+- `base_link` — robot chassis prim, Z up, X forward
 
 ---
 
@@ -77,30 +94,33 @@ Quaternion convention: Isaac Sim returns `[w, x, y, z]`. ROS expects `[x, y, z, 
 
 ## Policy Constraints (Isaac Sim H1 flat-terrain policy)
 
-| Constraint | Value | Source |
+| Constraint | Value | Notes |
 |---|---|---|
-| Max forward velocity | 0.75 m/s | Isaac Sim docs, exceeding causes fall |
+| Max forward velocity | 0.75 m/s | exceeding causes fall |
 | Min forward velocity | 0.0 m/s | reverse not supported |
-| Max yaw rate magnitude | 0.75 rad/s | Isaac Sim docs |
+| Max yaw rate magnitude | 0.75 rad/s |  |
 | Lateral velocity support | none | `base_command[1]` ignored by policy |
-| Initial spawn height | 1.05 m | h1_standalone.py line 70 |
+| Initial spawn height | 1.05 m | `bridge_config.ROBOT_SPAWN_HEIGHT` |
 
-The bridge clamps incoming `/h1/cmd_vel` to these limits. Out-of-range values are silently clamped (not rejected) and logged at warn level.
-
----
-
-## Failure Modes & Watchdogs
-
-| Condition | Detection | Response |
-|---|---|---|
-| No cmd_vel for >0.5 s | bridge timestamp check | bridge zeroes `base_command` |
-| No odom for >1.0 s | controller timestamp check | controller publishes zero cmd_vel, logs error |
-| Robot falls (Z < 0.5 m) | bridge polls pose | bridge zeroes command, logs error |
-| Sim process dies | controller missing odom | systemd/launchfile restart policy |
+The bridge clamps incoming `/h1/cmd_vel` to these limits. Out-of-range values
+are silently clipped without logging.
 
 ---
 
-## Waypoint Interface (Stage 4)
+## Failure Modes & Watchdogs  ⚪
+
+These are part of the spec but not yet implemented. Planned for Stage 5 hardening.
+
+| Condition | Detection | Response | Status |
+|---|---|---|---|
+| No cmd_vel for >0.5 s | bridge timestamp check | zero command | ⚪ planned |
+| No odom for >1.0 s | controller timestamp check | controller stops, logs error | ⚪ planned |
+| Robot falls (Z < 0.5 m) | bridge polls pose | zero command, log error | ⚪ planned |
+| Sim process dies | controller missing odom | launchfile restart policy | ⚪ planned |
+
+---
+
+## Waypoint Interface (Stage 4)  ⚪
 
 ### /h1/waypoints
 - **Direction:** operator → waypoint controller
@@ -117,4 +137,10 @@ The bridge clamps incoming `/h1/cmd_vel` to these limits. Out-of-range values ar
 
 ## Versioning
 
-This contract is **v1.0**. Any change to topic names, message types, units, or limits requires bumping the version and updating both the bridge and all controllers in lockstep.
+| Version | Change |
+|---|---|
+| 1.0 | Initial spec (written before implementation) |
+| 1.1 | Updated to reflect OmniGraph bridge in Isaac Sim 5.1; marked watchdogs and fall detection as planned-not-implemented |
+
+Any change to topic names, message types, units, or limits requires bumping
+the version and updating both the bridge and all controllers in lockstep.
