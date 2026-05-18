@@ -42,7 +42,7 @@ The Isaac Sim side uses OmniGraph for all ROS 2 publish/subscribe because Isaac 
 - [x] Stage 1 — Interface contract defined ([`docs/interface.md`](docs/interface.md))
 - [x] Stage 2 — Isaac Sim ↔ ROS 2 bridge (OmniGraph)
 - [x] Stage 3 — Teleop controller
-- [ ] Stage 4 — Closed-loop waypoint controller
+- [x] Stage 4 — Closed-loop waypoint controller
 - [ ] Stage 5 — Validation, demo video, polish
 - [ ] Stage 6 — Stretch: gesture control via webcam
 
