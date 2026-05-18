@@ -1,0 +1,9 @@
+# H1 waypoint navigation goals.
+# Coordinates in the odom frame (metres). Robot spawns at origin facing +X.
+# Default: a 2-metre square clockwise back to start.
+
+waypoints:
+  - { x: 2.0, y: 0.0 }
+  - { x: 2.0, y: 2.0 }
+  - { x: 0.0, y: 2.0 }
+  - { x: 0.0, y: 0.0 }

@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'teleop_node = h1_controller.teleop_node:main',
+            'waypoint_controller = h1_controller.waypoint_controller:main',
         ],
     },
 )
