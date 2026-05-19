@@ -34,6 +34,10 @@ from bridge_config import (
     MAX_LIN_X, MAX_ANG_Z,
 )
 
+settings = carb.settings.get_settings()
+settings.set("/app/runLoops/main/rateLimitEnabled", True)
+settings.set("/app/runLoops/main/rateLimitFrequency", 60)  # cap renderer at 60 fps
+settings.set("/physics/autoPopupSimulationOutputWindow", False)
 
 # ---------------------------------------------------------------------------
 # World & robot setup
