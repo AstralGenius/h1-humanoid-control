@@ -8,7 +8,7 @@ Demonstrates a clean two-process architecture — simulator and controllers comm
 
 [![H1 closed-loop waypoint navigation](https://img.youtube.com/vi/mbRQgwCe7mw/maxresdefault.jpg)](https://youtu.be/mbRQgwCe7mw)
 
-[Watch the 90-second demo on YouTube](https://youtu.be/mbRQgwCe7mw)
+[Watch the demo on YouTube](https://youtu.be/mbRQgwCe7mw)
 
 ## Validation
 
